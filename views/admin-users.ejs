@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+<head>
+  <title>Users - PTCL DDS Automation</title>
+  <%- include('partials/head') %>
+</head>
+<body>
+  <%- include('partials/nav') %>
+  <main>
+    <div class="card">
+      <h1>Add User</h1>
+      <p class="muted">This username must match the PTCL_USERNAME that person runs fillDDS.js with locally. No password or PTCL credentials are stored here.</p>
+      <% if (error) { %><div class="error"><%= error %></div><% } %>
+      <% if (success) { %><div class="success"><%= success %></div><% } %>
+      <form method="POST" action="/admin/users">
+        <label>Username</label>
+        <input type="text" name="username" required />
+        <button type="submit">Add User</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>All Users</h2>
+      <table>
+        <thead>
+          <tr><th>Username</th><th>Status</th><th>Added</th><th></th></tr>
+        </thead>
+        <tbody>
+          <% users.forEach(u => { %>
+            <tr>
+              <td>
+                <form method="POST" action="/admin/users/<%= u._id %>/update" style="display:flex; gap:8px;">
+                  <input type="text" name="username" value="<%= u.username %>" style="width:auto;" />
+                  <button type="submit" style="margin-top:0;">Rename</button>
+                </form>
+              </td>
+              <td>
+                <% if (u.enabled) { %>
+                  <span class="badge green">Enabled</span>
+                <% } else { %>
+                  <span class="badge red">Disabled</span>
+                <% } %>
+              </td>
+              <td><%= new Date(u.createdAt).toLocaleDateString() %></td>
+              <td>
+                <form method="POST" action="/admin/users/<%= u._id %>/toggle">
+                  <button type="submit" class="<%= u.enabled ? 'secondary' : '' %>" style="margin-top:0;">
+                    <%= u.enabled ? 'Disable' : 'Enable' %>
+                  </button>
+                </form>
+              </td>
+            </tr>
+          <% }) %>
+          <% if (users.length === 0) { %>
+            <tr><td colspan="4" class="muted">No users added yet.</td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</body>
+</html>

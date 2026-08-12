@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+<head>
+  <title>Fee Dashboard - PTCL DDS Automation</title>
+  <%- include('partials/head') %>
+</head>
+<body>
+  <%- include('partials/nav') %>
+  <main>
+    <div class="card">
+      <h1>Fee Check Gate</h1>
+      <p class="muted">
+        When ON, the extension's authorization check refuses to hand out entries to any user
+        whose fee isn't marked Cleared for the current month. This is enforced centrally in the
+        database - it cannot be bypassed from the extension.
+      </p>
+      <form method="POST" action="/admin/fees/toggle-check">
+        <input type="hidden" name="year" value="<%= year %>" />
+        <input type="hidden" name="month" value="<%= month %>" />
+        <p>
+          Status:
+          <% if (feeCheckEnabled) { %><span class="badge green">ON</span><% } else { %><span class="badge red">OFF</span><% } %>
+        </p>
+        <button type="submit"><%= feeCheckEnabled ? 'Turn OFF' : 'Turn ON' %></button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h1>Monthly Fee Dashboard</h1>
+      <p class="muted">Toggle a user to "Cleared" once you've verified their fee payment for that month.</p>
+
+      <div class="month-nav">
+        <form method="GET" action="/admin/fees" style="display:flex; gap:10px; align-items:center;">
+          <select name="month">
+            <% MONTH_NAMES.forEach((name, i) => { %>
+              <option value="<%= i + 1 %>" <%= (i + 1) === month ? 'selected' : '' %>><%= name %></option>
+            <% }) %>
+          </select>
+          <select name="year">
+            <% for (let y = year - 2; y <= year + 1; y++) { %>
+              <option value="<%= y %>" <%= y === year ? 'selected' : '' %>><%= y %></option>
+            <% } %>
+          </select>
+          <button type="submit">View</button>
+        </form>
+      </div>
+
+      <table>
+        <thead>
+          <tr><th>Username</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+          <% rows.forEach(row => { %>
+            <tr>
+              <td><%= row.user.username %> <% if (!row.user.enabled) { %><span class="badge red">Disabled</span><% } %></td>
+              <td>
+                <% if (row.cleared) { %>
+                  <span class="badge green">Cleared</span>
+                <% } else { %>
+                  <span class="badge red">Not Cleared</span>
+                <% } %>
+              </td>
+              <td>
+                <form method="POST" action="/admin/fees/toggle">
+                  <input type="hidden" name="userId" value="<%= row.user._id %>" />
+                  <input type="hidden" name="year" value="<%= year %>" />
+                  <input type="hidden" name="month" value="<%= month %>" />
+                  <button type="submit" class="<%= row.cleared ? 'secondary' : '' %>" style="margin-top:0;">
+                    <%= row.cleared ? 'Mark Not Cleared' : 'Mark Cleared' %>
+                  </button>
+                </form>
+              </td>
+            </tr>
+          <% }) %>
+          <% if (rows.length === 0) { %>
+            <tr><td colspan="3" class="muted">No users yet. Add one from the Users page.</td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</body>
+</html>
