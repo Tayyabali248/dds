@@ -5,4 +5,4 @@
 // phone on the same Wi-Fi network, where "localhost" would mean the phone
 // itself. If this machine's IP changes (different network, DHCP renewal),
 // update this and both manifests' host_permissions, then rebuild.
-export const BACKEND_URL = 'http://10.195.226.95:3000';
+export const BACKEND_URL = 'https://dds-jade-five.vercel.app';
