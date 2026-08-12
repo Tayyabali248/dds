@@ -84,6 +84,35 @@ export function fieldsMatchRecord(mapping: FieldMapping, record: EntryRecord): b
 }
 
 /**
+ * Sets ONLY the lat/lng fields (hidden + disabled display pair), always
+ * unconditionally (not just when they look wrong). The real PTCL page runs
+ * its own script on every load that calls navigator.geolocation.getCurrentPosition()
+ * and overwrites these exact fields whenever that resolves - which can
+ * happen at any time, including right after we first fill them. Calling
+ * this again immediately before every click (see content-script.ts) closes
+ * that race: JS is single-threaded, so nothing can slip in between this
+ * synchronous re-assertion and the click that immediately follows it in the
+ * same function call.
+ */
+export function reassertLatLng(mapping: FieldMapping, record: EntryRecord): string[] {
+  const missing: string[] = [];
+  for (const [selector, value] of [
+    [mapping.latHidden, record.lat],
+    [mapping.lngHidden, record.lng],
+    [mapping.latDisplay, record.lat],
+    [mapping.lngDisplay, record.lng],
+  ] as const) {
+    const el = document.querySelector<HTMLInputElement>(selector);
+    if (!el) {
+      missing.push(selector);
+      continue;
+    }
+    setNativeValue(el, value);
+  }
+  return missing;
+}
+
+/**
  * Fills the region dropdown, every text field, and the lat/lng pair
  * (hidden fields that actually get submitted, plus the disabled display
  * boxes next to them so the value is visible to a human in manual mode).
@@ -111,19 +140,7 @@ export function fillTextAndHiddenFields(mapping: FieldMapping, record: EntryReco
     if (el.value !== value) setNativeValue(el, value);
   }
 
-  for (const [selector, value] of [
-    [mapping.latHidden, record.lat],
-    [mapping.lngHidden, record.lng],
-    [mapping.latDisplay, record.lat],
-    [mapping.lngDisplay, record.lng],
-  ] as const) {
-    const el = document.querySelector<HTMLInputElement>(selector);
-    if (!el) {
-      missing.push(selector);
-      continue;
-    }
-    if (el.value !== value) setNativeValue(el, value);
-  }
+  missing.push(...reassertLatLng(mapping, record));
 
   return missing;
 }

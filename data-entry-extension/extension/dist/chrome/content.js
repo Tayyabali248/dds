@@ -168,6 +168,23 @@
     if (!lngHidden || lngHidden.value !== record.lng) return false;
     return true;
   }
+  function reassertLatLng(mapping2, record) {
+    const missing = [];
+    for (const [selector, value] of [
+      [mapping2.latHidden, record.lat],
+      [mapping2.lngHidden, record.lng],
+      [mapping2.latDisplay, record.lat],
+      [mapping2.lngDisplay, record.lng]
+    ]) {
+      const el = document.querySelector(selector);
+      if (!el) {
+        missing.push(selector);
+        continue;
+      }
+      setNativeValue(el, value);
+    }
+    return missing;
+  }
   function fillTextAndHiddenFields(mapping2, record) {
     const missing = [];
     const region = document.querySelector(mapping2.region);
@@ -187,19 +204,7 @@
       const value = recordValueFor(record, key);
       if (el.value !== value) setNativeValue(el, value);
     }
-    for (const [selector, value] of [
-      [mapping2.latHidden, record.lat],
-      [mapping2.lngHidden, record.lng],
-      [mapping2.latDisplay, record.lat],
-      [mapping2.lngDisplay, record.lng]
-    ]) {
-      const el = document.querySelector(selector);
-      if (!el) {
-        missing.push(selector);
-        continue;
-      }
-      if (el.value !== value) setNativeValue(el, value);
-    }
+    missing.push(...reassertLatLng(mapping2, record));
     return missing;
   }
   function isOrderStatusChecked(mapping2) {
@@ -217,6 +222,22 @@
 
   // extension/src/content/content-script.ts
   var mapping = defaultFieldMapping;
+  var manualSubmitGuardAttached = false;
+  function attachManualSubmitGuard(record) {
+    if (manualSubmitGuardAttached) return;
+    manualSubmitGuardAttached = true;
+    document.addEventListener(
+      "click",
+      (event) => {
+        const submitButton = document.querySelector(mapping.submit);
+        const target = event.target;
+        if (submitButton && target && (target === submitButton || submitButton.contains(target))) {
+          reassertLatLng(mapping, record);
+        }
+      },
+      true
+    );
+  }
   function send(message) {
     api.runtime.sendMessage(message).catch(() => {
     });
@@ -237,12 +258,14 @@
       send({ type: "FILL_RESULT", entryIndex, success: true });
     }
     if (!isOrderStatusChecked(mapping)) {
+      reassertLatLng(mapping, record);
       if (!clickElement(mapping.orderStatusRadio)) {
         send({ type: "SUBMISSION_FAILED", entryIndex, reason: "Order Status radio button was not found." });
       }
       return;
     }
     if (!isTechnologyChecked(mapping)) {
+      reassertLatLng(mapping, record);
       if (!clickElement(mapping.technologyRadio)) {
         send({ type: "SUBMISSION_FAILED", entryIndex, reason: "Technology radio button was not found." });
       }
@@ -250,9 +273,13 @@
     }
     send({ type: "READY_TO_SUBMIT", entryIndex });
     if (mode === "auto") {
+      reassertLatLng(mapping, record);
       if (!clickElement(mapping.submit)) {
         send({ type: "SUBMISSION_FAILED", entryIndex, reason: "Submit button was not found." });
       }
+    }
+    if (mode === "manual") {
+      attachManualSubmitGuard(record);
     }
   }
   function announceReady() {

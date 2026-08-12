@@ -241,7 +241,7 @@
   };
 
   // extension/src/config/backend.ts
-  var BACKEND_URL = "http://10.195.226.95:3000";
+  var BACKEND_URL = "https://dds-jade-five.vercel.app";
 
   // extension/src/background/service-worker.ts
   var cachedManager = null;
