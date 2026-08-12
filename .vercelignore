@@ -1,0 +1,4 @@
+data-entry-extension/
+node_modules/
+.env
+*.png

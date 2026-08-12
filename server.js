@@ -7,14 +7,19 @@ const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
 const apiRoutes = require('./routes/api');
 
-const PORT = process.env.PORT || 3000;
+// Building the app is async (must connect to Mongo first), but Vercel's
+// Node runtime needs a request handler available immediately on import -
+// so build it once and cache the in-flight/completed promise, rather than
+// wrapping everything in a top-level async IIFE that calls app.listen().
+let appPromise = null;
 
-(async () => {
+async function buildApp() {
   await connectDB();
 
   const app = express();
   app.set('view engine', 'ejs');
   app.set('views', __dirname + '/views');
+  app.set('trust proxy', 1); // Vercel sits behind a reverse proxy
 
   app.use(express.urlencoded({ extended: true }));
   app.use(express.json());
@@ -41,8 +46,32 @@ const PORT = process.env.PORT || 3000;
   app.use('/api', apiRoutes);
   app.use('/admin', adminRoutes);
 
-  app.listen(PORT, () => console.log(`DDS web app running at http://localhost:${PORT}`));
-})().catch((err) => {
-  console.error('Failed to start server:', err);
-  process.exit(1);
-});
+  return app;
+}
+
+function getApp() {
+  if (!appPromise) appPromise = buildApp();
+  return appPromise;
+}
+
+// Vercel serverless entry point: Vercel calls this exported function per
+// request, awaiting it first so the (cached, after the first call) Express
+// app is ready before handling anything.
+module.exports = async (req, res) => {
+  const app = await getApp();
+  app(req, res);
+};
+
+// Local/plain-Node dev: only bind a real listener when this file is run
+// directly (`node server.js`), not when Vercel imports it as a module.
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
+  getApp()
+    .then((app) => {
+      app.listen(PORT, () => console.log(`DDS web app running at http://localhost:${PORT}`));
+    })
+    .catch((err) => {
+      console.error('Failed to start server:', err);
+      process.exit(1);
+    });
+}
