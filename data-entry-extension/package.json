@@ -1,0 +1,17 @@
+{
+  "name": "data-entry-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cross-browser WebExtension (Chrome + Firefox) that fills the real PTCL POMS DDS form using dds/server.js as its backend. No server-side browser automation.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "node scripts/build.js",
+    "build:watch": "node scripts/build.js --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.3",
+    "@types/chrome": "^0.0.287",
+    "@types/firefox-webext-browser": "^120.0.4"
+  }
+}

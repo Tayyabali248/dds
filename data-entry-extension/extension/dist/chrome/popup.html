@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Data Entry Assistant</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <h1>DDS Entry Assistant</h1>
+
+  <div id="setup-section">
+    <label for="ptcl-username-input">PTCL Username</label>
+    <input type="text" id="ptcl-username-input" placeholder="e.g. SDSMTR.MFAISAL" />
+    <p class="muted">Checked against the roster - log into PTCL POMS yourself first; this is only for authorization.</p>
+
+    <label for="entries-input">Entries</label>
+    <input type="number" id="entries-input" min="1" max="100" value="10" />
+
+    <fieldset id="mode-fieldset">
+      <legend>Mode</legend>
+      <label class="radio-label">
+        <input type="radio" name="mode" value="auto" id="mode-auto" />
+        Auto Submit
+      </label>
+      <label class="radio-label">
+        <input type="radio" name="mode" value="manual" id="mode-manual" checked />
+        Manual Submit
+      </label>
+    </fieldset>
+  </div>
+
+  <div id="controls">
+    <button id="start-btn">Start</button>
+    <button id="pause-btn" class="secondary" disabled>Pause</button>
+    <button id="resume-btn" class="secondary" disabled>Resume</button>
+    <button id="stop-btn" class="danger" disabled>Stop</button>
+  </div>
+
+  <div id="progress-section">
+    <p class="progress-line">Progress: <span id="progress-current">0</span> / <span id="progress-total">0</span></p>
+    <p class="stats-line">
+      Completed: <span id="stat-completed">0</span> &nbsp;
+      Failed: <span id="stat-failed">0</span> &nbsp;
+      Skipped: <span id="stat-skipped">0</span>
+    </p>
+    <p class="status-line" id="status-line">Idle</p>
+  </div>
+
+  <div id="error-section" class="hidden">
+    <p class="error-text" id="error-text"></p>
+    <button id="retry-btn">Retry</button>
+    <button id="skip-btn" class="secondary">Skip</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

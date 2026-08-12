@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "DDS Entry Assistant (Chrome)",
+  "version": "0.1.0",
+  "description": "Fills the PTCL POMS DDS New Customer form in your own logged-in browser tab, using entries from our own backend. No server-side browser automation.",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "permissions": ["storage"],
+  "host_permissions": ["https://my.ptcl.net.pk/*", "http://localhost:3000/*", "http://10.195.226.95:3000/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://my.ptcl.net.pk/POMS/DDSNewCustomer.aspx*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

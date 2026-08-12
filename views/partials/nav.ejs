@@ -1,0 +1,15 @@
+<nav>
+  <div>
+    <strong>PTCL DDS Automation</strong>
+    <% if (typeof session !== 'undefined' && session.adminId) { %>
+      <a href="/admin/fees" style="margin-left: 24px;">Fee Dashboard</a>
+      <a href="/admin/users">Users</a>
+    <% } %>
+  </div>
+  <% if (typeof session !== 'undefined' && session.adminId) { %>
+    <div>
+      <span class="muted" style="color:#c8d1e0; margin-right: 12px;"><%= session.adminUsername %></span>
+      <form method="POST" action="/logout"><button type="submit">Logout</button></form>
+    </div>
+  <% } %>
+</nav>
