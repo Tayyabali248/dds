@@ -7,14 +7,12 @@ import {
   isOrderStatusChecked,
   isTechnologyChecked,
   reassertLatLng,
-  readSalesOfficer,
 } from '../automation/form-filler';
 import type {
   BackgroundToContentMessage,
   ContentReadyMessage,
   EntryRecord,
   FillEntryMessage,
-  SalesOfficerResponse,
 } from '../types/messages';
 
 const mapping = defaultFieldMapping;
@@ -125,13 +123,9 @@ function announceReady(): void {
   send(message);
 }
 
-api.runtime.onMessage.addListener((message: BackgroundToContentMessage, _sender, sendResponse) => {
+api.runtime.onMessage.addListener((message: BackgroundToContentMessage) => {
   if (message.type === 'FILL_ENTRY') {
     handleFillEntry(message);
-  }
-  if (message.type === 'GET_SALES_OFFICER') {
-    const response: SalesOfficerResponse = { salesOfficer: readSalesOfficer(mapping) };
-    sendResponse(response);
   }
   return false;
 });

@@ -9,10 +9,10 @@
   <h1>DDS Entry Assistant</h1>
 
   <div id="setup-section">
-    <label for="ptcl-username-input">PTCL Username</label>
-    <input type="text" id="ptcl-username-input" placeholder="e.g. SDSMTR.MFAISAL" />
-    <button id="detect-username-btn" class="link-btn" type="button">Read from Sales Officer field</button>
-    <p class="muted" id="username-hint">Checked against the roster - log into PTCL POMS yourself first; this is only for authorization.</p>
+    <p class="field-label">Sales Officer</p>
+    <p class="readonly-value" id="sales-officer-value">Reading from the page...</p>
+    <button id="detect-username-btn" class="link-btn" type="button">Re-check</button>
+    <p class="muted" id="username-hint">Read from the DDS page's own Sales Officer box, then checked against the roster. Log into PTCL POMS yourself first.</p>
 
     <label for="entries-input">Entries</label>
     <input type="number" id="entries-input" min="1" max="100" value="10" />

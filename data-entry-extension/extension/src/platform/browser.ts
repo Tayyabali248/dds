@@ -77,6 +77,29 @@ function sendMessageToTab<TResponse = unknown>(tabId: number, message: unknown):
   });
 }
 
+/**
+ * Runs `func` inside a tab and returns one result per frame it ran in.
+ * Both Chrome MV3 and Firefox MV3 expose `scripting.executeScript` as a
+ * Promise-only API (no callback form), so there's nothing to branch on here.
+ * Requires the "scripting" permission plus a host permission for the tab.
+ */
+function executeScriptInTab<TArgs extends unknown[], TResult>(
+  tabId: number,
+  func: (...args: TArgs) => TResult,
+  args: TArgs,
+  allFrames = true
+): Promise<(TResult | undefined)[]> {
+  const injection = {
+    target: { tabId, allFrames },
+    func,
+    args,
+  } as unknown as chrome.scripting.ScriptInjection<TArgs, TResult>;
+
+  return Promise.resolve(runtimeApi.scripting.executeScript(injection)).then((results) =>
+    results.map((entry) => entry.result as TResult | undefined)
+  );
+}
+
 function queryTabs(query: chrome.tabs.QueryInfo): Promise<chrome.tabs.Tab[]> {
   if (isFirefox) {
     return (runtimeApi.tabs.query(query) as unknown) as Promise<chrome.tabs.Tab[]>;
@@ -118,6 +141,10 @@ export const api = {
   tabs: {
     query: queryTabs,
     sendMessage: sendMessageToTab,
+  },
+
+  scripting: {
+    executeScript: executeScriptInTab,
   },
 };
 

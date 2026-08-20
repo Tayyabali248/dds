@@ -51,6 +51,16 @@
       });
     });
   }
+  function executeScriptInTab(tabId, func, args, allFrames = true) {
+    const injection = {
+      target: { tabId, allFrames },
+      func,
+      args
+    };
+    return Promise.resolve(runtimeApi.scripting.executeScript(injection)).then(
+      (results) => results.map((entry) => entry.result)
+    );
+  }
   function queryTabs(query) {
     if (isFirefox) {
       return runtimeApi.tabs.query(query);
@@ -86,6 +96,9 @@
     tabs: {
       query: queryTabs,
       sendMessage: sendMessageToTab
+    },
+    scripting: {
+      executeScript: executeScriptInTab
     }
   };
 
@@ -95,8 +108,8 @@
     if (!found) throw new Error(`Missing element #${id}`);
     return found;
   }
-  var ptclUsernameInput = el("ptcl-username-input");
-  var detectUsernameBtn = el("detect-username-btn");
+  var salesOfficerValue = el("sales-officer-value");
+  var detectBtn = el("detect-username-btn");
   var usernameHint = el("username-hint");
   var entriesInput = el("entries-input");
   var modeAuto = el("mode-auto");
@@ -119,39 +132,31 @@
   async function send(message) {
     return api.runtime.sendMessage(message);
   }
-  var lastRenderedUsername = "";
-  var usernamePinned = false;
-  var POMS_FORM_URL = "https://my.ptcl.net.pk/POMS/DDSNewCustomer.aspx*";
-  async function readSalesOfficerFromPage() {
-    const message = { type: "GET_SALES_OFFICER" };
-    const tabIds = [];
-    const [activeTab] = await api.tabs.query({ active: true, currentWindow: true });
-    if (activeTab?.id !== void 0) tabIds.push(activeTab.id);
-    for (const tab of await api.tabs.query({ url: POMS_FORM_URL })) {
-      if (tab.id !== void 0 && !tabIds.includes(tab.id)) tabIds.push(tab.id);
-    }
-    for (const tabId of tabIds) {
-      try {
-        const reply = await api.tabs.sendMessage(tabId, message);
-        if (reply?.salesOfficer) return reply.salesOfficer;
-      } catch {
-      }
-    }
-    return null;
+  var detectedUsername = null;
+  function showSalesOfficer(value, hint) {
+    salesOfficerValue.textContent = value ?? "Not found";
+    salesOfficerValue.classList.toggle("unresolved", value === null);
+    if (hint) usernameHint.textContent = hint;
   }
-  async function prefillUsernameFromPage(manual) {
-    if (!manual && ptclUsernameInput.value.trim()) return;
-    const officer = await readSalesOfficerFromPage();
-    if (!officer) {
-      if (manual) {
-        usernameHint.textContent = "Sales Officer field not readable - open the DDS New Customer page in a tab, or type the username.";
+  async function detectSalesOfficer() {
+    detectBtn.disabled = true;
+    salesOfficerValue.classList.remove("unresolved");
+    salesOfficerValue.textContent = "Reading from the page...";
+    const message = { type: "DETECT_SALES_OFFICER" };
+    try {
+      const result = await api.runtime.sendMessage(message);
+      detectedUsername = result.salesOfficer;
+      if (result.salesOfficer) {
+        showSalesOfficer(result.salesOfficer, "Read from the DDS page. Checked against the roster on Start.");
+      } else {
+        showSalesOfficer(null, result.error ?? "Open the DDS New Customer page and log into POMS.");
       }
-      return;
+    } catch (err) {
+      detectedUsername = null;
+      showSalesOfficer(null, err instanceof Error ? err.message : String(err));
+    } finally {
+      detectBtn.disabled = false;
     }
-    if (!manual && ptclUsernameInput.value.trim()) return;
-    ptclUsernameInput.value = officer;
-    usernamePinned = true;
-    usernameHint.textContent = "Read from the page's Sales Officer field.";
   }
   function render(state) {
     const isIdle = state.runState === "idle";
@@ -159,14 +164,12 @@
     const isPaused = state.runState === "paused";
     const isFinished = state.runState === "completed" || state.runState === "stopped";
     const hasFailure = state.entryStatus === "failed";
-    if (!usernamePinned && state.ptclUsername && state.ptclUsername !== lastRenderedUsername) {
-      ptclUsernameInput.value = state.ptclUsername;
-      lastRenderedUsername = state.ptclUsername;
-    }
+    const inFlight = isRunning || isPaused;
+    const shown = inFlight ? state.ptclUsername : detectedUsername ?? state.ptclUsername;
+    if (shown) showSalesOfficer(shown);
     const canEditSetup = isIdle || isFinished;
     setupSection.style.opacity = canEditSetup ? "1" : "0.5";
-    ptclUsernameInput.disabled = !canEditSetup;
-    detectUsernameBtn.disabled = !canEditSetup;
+    detectBtn.disabled = !canEditSetup;
     entriesInput.disabled = !canEditSetup;
     modeAuto.disabled = !canEditSetup;
     modeManual.disabled = !canEditSetup;
@@ -196,22 +199,13 @@
     const state = await send({ type: "GET_STATUS" });
     render(state);
   }
-  ptclUsernameInput.addEventListener("input", () => {
-    usernamePinned = true;
-  });
-  detectUsernameBtn.addEventListener("click", () => {
-    void prefillUsernameFromPage(true);
+  detectBtn.addEventListener("click", () => {
+    void detectSalesOfficer();
   });
   startBtn.addEventListener("click", async () => {
-    const ptclUsername = ptclUsernameInput.value.trim();
-    if (!ptclUsername) {
-      errorSection.classList.remove("hidden");
-      errorText.textContent = "Enter your PTCL username first.";
-      return;
-    }
     const total = Math.max(1, Math.min(100, parseInt(entriesInput.value, 10) || 1));
     const mode = modeAuto.checked ? "auto" : "manual";
-    const state = await send({ type: "START", mode, total, ptclUsername });
+    const state = await send({ type: "START", mode, total });
     render(state);
   });
   pauseBtn.addEventListener("click", async () => {
@@ -232,6 +226,6 @@
   });
   var pollTimer = setInterval(refresh, 1e3);
   window.addEventListener("unload", () => clearInterval(pollTimer));
-  void refresh().then(() => prefillUsernameFromPage(false));
+  void refresh().then(detectSalesOfficer);
 })();
 //# sourceMappingURL=popup.js.map

@@ -39,18 +39,19 @@ export interface QueueState {
   entryStatus: EntryStatus;
   /** Tab the automation is currently driving, so a retry/resume/reload can re-target it after a service-worker restart. */
   tabId: number | null;
-  /** Who this run is for - sent with every backend API call. */
+  /** Who this run is for - read off the page's Sales Officer box at START, sent with every backend API call. */
   ptclUsername: string;
   /** Fetched from the backend once at START and persisted, so a browser/service-worker restart doesn't lose the actual data mid-run. */
   entries: EntryRecord[];
 }
 
 // ---------- Popup -> Background ----------
+// No username here: the background reads it off the page's Sales Officer box
+// itself at START, so there is nothing for the user to type or mistype.
 export interface StartMessage {
   type: 'START';
   mode: AutomationMode;
   total: number;
-  ptclUsername: string;
 }
 export interface PauseMessage {
   type: 'PAUSE';
@@ -70,8 +71,13 @@ export interface RetryEntryMessage {
 export interface SkipEntryMessage {
   type: 'SKIP_ENTRY';
 }
+/** "Show me who I'm logged in as" - answered with SalesOfficerResult, not a QueueState. */
+export interface DetectSalesOfficerMessage {
+  type: 'DETECT_SALES_OFFICER';
+}
 
-export type PopupToBackgroundMessage =
+/** The subset of popup messages the background answers with a fresh QueueState. */
+export type PopupQueueMessage =
   | StartMessage
   | PauseMessage
   | ResumeMessage
@@ -79,6 +85,19 @@ export type PopupToBackgroundMessage =
   | GetStatusMessage
   | RetryEntryMessage
   | SkipEntryMessage;
+
+export type PopupToBackgroundMessage = PopupQueueMessage | DetectSalesOfficerMessage;
+
+/**
+ * Reply to DETECT_SALES_OFFICER. `salesOfficer` is null when no POMS tab
+ * could be read, in which case `error` says what to do about it. `tabUrl` is
+ * the tab the value came from, so the popup can show which page it used.
+ */
+export interface SalesOfficerResult {
+  salesOfficer: string | null;
+  tabUrl: string | null;
+  error: string | null;
+}
 
 // ---------- Content Script -> Background ----------
 export interface ContentReadyMessage {
@@ -128,24 +147,8 @@ export interface FillEntryMessage {
 export interface NoActiveQueueMessage {
   type: 'NO_ACTIVE_QUEUE';
 }
-/**
- * Sent by the popup straight to the content script (not via the background)
- * to read the logged-in PTCL username off the page's own Sales Officer box,
- * so the user never has to type it. Answered with SalesOfficerResponse.
- */
-export interface GetSalesOfficerMessage {
-  type: 'GET_SALES_OFFICER';
-}
 
-export type BackgroundToContentMessage =
-  | FillEntryMessage
-  | NoActiveQueueMessage
-  | GetSalesOfficerMessage;
-
-/** null when the field isn't on the page (wrong screen) or is still empty. */
-export interface SalesOfficerResponse {
-  salesOfficer: string | null;
-}
+export type BackgroundToContentMessage = FillEntryMessage | NoActiveQueueMessage;
 
 // Background's reply to every PopupToBackgroundMessage is the fresh QueueState.
 export type BackgroundToPopupMessage = QueueState;

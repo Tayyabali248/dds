@@ -1,14 +1,18 @@
 import { api } from '../platform/browser';
 import { QueueManager } from '../queue/queue-manager';
 import { BACKEND_URL } from '../config/backend';
+import { defaultFieldMapping } from '../config/field-mapping';
+import { readSalesOfficerInPage } from '../automation/sales-officer';
 import type {
   ContentToBackgroundMessage,
   EntryRecord,
   FillEntryMessage,
   FillResultMessage,
+  PopupQueueMessage,
   PopupToBackgroundMessage,
   QueueState,
   ReadyToSubmitMessage,
+  SalesOfficerResult,
   SubmissionFailedMessage,
   SubmissionSuccessMessage,
 } from '../types/messages';
@@ -21,6 +25,74 @@ let cachedManager: Promise<QueueManager> | null = null;
 function getQueueManager(): Promise<QueueManager> {
   if (!cachedManager) cachedManager = QueueManager.load();
   return cachedManager;
+}
+
+// Any POMS page, not just the DDS form: the Sales Officer box is read by
+// injection rather than by messaging the content script, so it works on tabs
+// the content script never attached to.
+const POMS_TAB_URL = 'https://my.ptcl.net.pk/*';
+
+/**
+ * Tabs worth checking for the Sales Officer box, active tab first (that's
+ * the one the user is looking at while the popup is open, and the one we'd
+ * drive), then any other open POMS tab.
+ */
+async function candidateTabs(): Promise<chrome.tabs.Tab[]> {
+  const tabs: chrome.tabs.Tab[] = [];
+
+  const [activeTab] = await api.tabs.query({ active: true, currentWindow: true });
+  if (activeTab?.id !== undefined) tabs.push(activeTab);
+
+  for (const tab of await api.tabs.query({ url: POMS_TAB_URL })) {
+    if (tab.id !== undefined && !tabs.some((known) => known.id === tab.id)) tabs.push(tab);
+  }
+
+  return tabs;
+}
+
+/** Result of hunting for the Sales Officer value, plus the tab it was found in. */
+interface SalesOfficerLookup extends SalesOfficerResult {
+  tabId: number | null;
+}
+
+/**
+ * Injects the reader into every frame of each candidate tab and takes the
+ * first non-empty value. The tab it came from is the tab we should drive -
+ * it is by definition the one showing the logged-in DDS form.
+ */
+async function lookupSalesOfficer(): Promise<SalesOfficerLookup> {
+  const tabs = await candidateTabs();
+  const checked: string[] = [];
+
+  for (const tab of tabs) {
+    if (tab.id === undefined) continue;
+    const label = tab.url ?? `tab ${tab.id}`;
+
+    let results: (string | null | undefined)[];
+    try {
+      results = await api.scripting.executeScript(tab.id, readSalesOfficerInPage, [
+        defaultFieldMapping.salesOfficer,
+      ]);
+    } catch {
+      // Not a page we're allowed to inject into (chrome://, another site,
+      // the extension's own pages) - nothing to report, just move on.
+      continue;
+    }
+
+    const found = results.find((value): value is string => typeof value === 'string' && value.length > 0);
+    if (found) {
+      return { salesOfficer: found, tabUrl: tab.url ?? null, tabId: tab.id, error: null };
+    }
+    checked.push(label);
+  }
+
+  const where = checked.length > 0 ? ` Checked: ${checked.slice(0, 2).join(', ')}` : '';
+  return {
+    salesOfficer: null,
+    tabUrl: null,
+    tabId: null,
+    error: `Could not read the Sales Officer box. Open the DDS New Customer page in a tab and log into POMS, then try again.${where}`,
+  };
 }
 
 async function fetchEntries(ptclUsername: string, count: number): Promise<EntryRecord[]> {
@@ -129,24 +201,26 @@ async function handleSubmissionFailed(msg: SubmissionFailedMessage): Promise<voi
 
 // --- Handlers for messages coming FROM the popup ---
 
-async function handleStart(total: number, mode: 'auto' | 'manual', ptclUsername: string): Promise<QueueState> {
+async function handleStart(total: number, mode: 'auto' | 'manual'): Promise<QueueState> {
   const qm = await getQueueManager();
+
+  // Read the username fresh here rather than trusting whatever the popup
+  // last displayed - the user may have switched tabs or logged in as someone
+  // else since then, and this value authorizes the whole run.
+  const lookup = await lookupSalesOfficer();
+  if (!lookup.salesOfficer || lookup.tabId === null) {
+    return qm.reportError(lookup.error ?? 'Could not read the Sales Officer box.');
+  }
 
   let entries: EntryRecord[];
   try {
-    entries = await fetchEntries(ptclUsername, total);
+    entries = await fetchEntries(lookup.salesOfficer, total);
   } catch (err) {
     return qm.reportError(err instanceof Error ? err.message : String(err));
   }
 
-  const [activeTab] = await api.tabs.query({ active: true, currentWindow: true });
-  const tabId = activeTab?.id ?? null;
-
-  await qm.start(mode, ptclUsername, entries, tabId);
-
-  if (tabId !== null) {
-    await sendFillEntry(tabId, qm);
-  }
+  await qm.start(mode, lookup.salesOfficer, entries, lookup.tabId);
+  await sendFillEntry(lookup.tabId, qm);
   return qm.getState();
 }
 
@@ -160,12 +234,17 @@ async function handleRetryOrSkip(action: 'retry' | 'skip'): Promise<QueueState> 
   return qm.getState();
 }
 
-async function handlePopupMessage(message: PopupToBackgroundMessage): Promise<QueueState> {
+async function handleDetectSalesOfficer(): Promise<SalesOfficerResult> {
+  const { salesOfficer, tabUrl, error } = await lookupSalesOfficer();
+  return { salesOfficer, tabUrl, error };
+}
+
+async function handlePopupMessage(message: PopupQueueMessage): Promise<QueueState> {
   const qm = await getQueueManager();
 
   switch (message.type) {
     case 'START':
-      return handleStart(message.total, message.mode, message.ptclUsername);
+      return handleStart(message.total, message.mode);
     case 'PAUSE':
       return qm.pause();
     case 'RESUME':
@@ -203,6 +282,10 @@ api.runtime.onMessage.addListener(
       case 'SUBMISSION_FAILED':
         void handleSubmissionFailed(message);
         return false;
+      case 'DETECT_SALES_OFFICER':
+        // The one popup message answered with something other than a QueueState.
+        handleDetectSalesOfficer().then(sendResponse);
+        return true;
       default:
         // Popup messages expect a QueueState response.
         handlePopupMessage(message).then(sendResponse);

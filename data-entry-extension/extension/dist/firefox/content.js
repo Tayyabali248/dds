@@ -51,6 +51,16 @@
       });
     });
   }
+  function executeScriptInTab(tabId, func, args, allFrames = true) {
+    const injection = {
+      target: { tabId, allFrames },
+      func,
+      args
+    };
+    return Promise.resolve(runtimeApi.scripting.executeScript(injection)).then(
+      (results) => results.map((entry) => entry.result)
+    );
+  }
   function queryTabs(query) {
     if (isFirefox) {
       return runtimeApi.tabs.query(query);
@@ -86,6 +96,9 @@
     tabs: {
       query: queryTabs,
       sendMessage: sendMessageToTab
+    },
+    scripting: {
+      executeScript: executeScriptInTab
     }
   };
 
@@ -214,11 +227,6 @@
   function isTechnologyChecked(mapping2) {
     return document.querySelector(mapping2.technologyRadio)?.checked ?? false;
   }
-  function readSalesOfficer(mapping2) {
-    const el = document.querySelector(mapping2.salesOfficer);
-    const value = el?.value.trim() ?? "";
-    return value.length > 0 ? value : null;
-  }
   function clickElement(selector) {
     const el = document.querySelector(selector);
     if (!el) return false;
@@ -292,13 +300,9 @@
     const message = { type: "CONTENT_READY", url: window.location.href };
     send(message);
   }
-  api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  api.runtime.onMessage.addListener((message) => {
     if (message.type === "FILL_ENTRY") {
       handleFillEntry(message);
-    }
-    if (message.type === "GET_SALES_OFFICER") {
-      const response = { salesOfficer: readSalesOfficer(mapping) };
-      sendResponse(response);
     }
     return false;
   });

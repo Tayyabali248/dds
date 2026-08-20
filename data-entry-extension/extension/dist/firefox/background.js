@@ -51,6 +51,16 @@
       });
     });
   }
+  function executeScriptInTab(tabId, func, args, allFrames = true) {
+    const injection = {
+      target: { tabId, allFrames },
+      func,
+      args
+    };
+    return Promise.resolve(runtimeApi.scripting.executeScript(injection)).then(
+      (results) => results.map((entry) => entry.result)
+    );
+  }
   function queryTabs(query) {
     if (isFirefox) {
       return runtimeApi.tabs.query(query);
@@ -86,6 +96,9 @@
     tabs: {
       query: queryTabs,
       sendMessage: sendMessageToTab
+    },
+    scripting: {
+      executeScript: executeScriptInTab
     }
   };
 
@@ -243,11 +256,103 @@
   // extension/src/config/backend.ts
   var BACKEND_URL = "https://dds-jade-five.vercel.app";
 
+  // extension/src/config/field-mapping.ts
+  var defaultFieldMapping = {
+    region: "#ddlregionname",
+    exchange: "#TextExchange",
+    name: "#TextName",
+    address: "#TextAddress",
+    contact: "#TextContactNo",
+    competition: "#TestCompName",
+    latHidden: "#hfLatitude",
+    lngHidden: "#hfLongitude",
+    latDisplay: "#TxtLatitude",
+    lngDisplay: "#TxtLongitude",
+    email: "#TxtEmail",
+    salesOfficer: "#txtSalesofficer",
+    orderStatusRadio: "#rbOrderBookedNo",
+    // "Contact Later"
+    technologyRadio: "#rbODNNo",
+    // "FF"
+    submit: "#btnLogin"
+  };
+
+  // extension/src/automation/sales-officer.ts
+  function readSalesOfficerInPage(primarySelector) {
+    const selectors = [
+      primarySelector,
+      "#txtSalesofficer",
+      'input[name="txtSalesofficer"]',
+      // ASP.NET rewrites control ids/names when the form sits inside a master
+      // page or user control (e.g. ctl00$ContentPlaceHolder1$txtSalesofficer).
+      '[id$="txtSalesofficer"]',
+      '[name$="txtSalesofficer"]'
+    ];
+    for (const selector of selectors) {
+      let element = null;
+      try {
+        element = document.querySelector(selector);
+      } catch {
+        continue;
+      }
+      const value = (element?.value ?? "").trim();
+      if (value) return value;
+    }
+    const inputs = document.querySelectorAll("input");
+    for (let i = 0; i < inputs.length; i += 1) {
+      const input = inputs[i];
+      const key = `${input.id} ${input.name}`.toLowerCase();
+      if (key.indexOf("salesofficer") !== -1 || key.indexOf("sales_officer") !== -1) {
+        const value = (input.value ?? "").trim();
+        if (value) return value;
+      }
+    }
+    return null;
+  }
+
   // extension/src/background/service-worker.ts
   var cachedManager = null;
   function getQueueManager() {
     if (!cachedManager) cachedManager = QueueManager.load();
     return cachedManager;
+  }
+  var POMS_TAB_URL = "https://my.ptcl.net.pk/*";
+  async function candidateTabs() {
+    const tabs = [];
+    const [activeTab] = await api.tabs.query({ active: true, currentWindow: true });
+    if (activeTab?.id !== void 0) tabs.push(activeTab);
+    for (const tab of await api.tabs.query({ url: POMS_TAB_URL })) {
+      if (tab.id !== void 0 && !tabs.some((known) => known.id === tab.id)) tabs.push(tab);
+    }
+    return tabs;
+  }
+  async function lookupSalesOfficer() {
+    const tabs = await candidateTabs();
+    const checked = [];
+    for (const tab of tabs) {
+      if (tab.id === void 0) continue;
+      const label = tab.url ?? `tab ${tab.id}`;
+      let results;
+      try {
+        results = await api.scripting.executeScript(tab.id, readSalesOfficerInPage, [
+          defaultFieldMapping.salesOfficer
+        ]);
+      } catch {
+        continue;
+      }
+      const found = results.find((value) => typeof value === "string" && value.length > 0);
+      if (found) {
+        return { salesOfficer: found, tabUrl: tab.url ?? null, tabId: tab.id, error: null };
+      }
+      checked.push(label);
+    }
+    const where = checked.length > 0 ? ` Checked: ${checked.slice(0, 2).join(", ")}` : "";
+    return {
+      salesOfficer: null,
+      tabUrl: null,
+      tabId: null,
+      error: `Could not read the Sales Officer box. Open the DDS New Customer page in a tab and log into POMS, then try again.${where}`
+    };
   }
   async function fetchEntries(ptclUsername, count) {
     let response;
@@ -333,20 +438,20 @@
     if (state.runState !== "running" || msg.entryIndex !== state.currentIndex) return;
     await qm.markFailed(msg.reason);
   }
-  async function handleStart(total, mode, ptclUsername) {
+  async function handleStart(total, mode) {
     const qm = await getQueueManager();
+    const lookup = await lookupSalesOfficer();
+    if (!lookup.salesOfficer || lookup.tabId === null) {
+      return qm.reportError(lookup.error ?? "Could not read the Sales Officer box.");
+    }
     let entries;
     try {
-      entries = await fetchEntries(ptclUsername, total);
+      entries = await fetchEntries(lookup.salesOfficer, total);
     } catch (err) {
       return qm.reportError(err instanceof Error ? err.message : String(err));
     }
-    const [activeTab] = await api.tabs.query({ active: true, currentWindow: true });
-    const tabId = activeTab?.id ?? null;
-    await qm.start(mode, ptclUsername, entries, tabId);
-    if (tabId !== null) {
-      await sendFillEntry(tabId, qm);
-    }
+    await qm.start(mode, lookup.salesOfficer, entries, lookup.tabId);
+    await sendFillEntry(lookup.tabId, qm);
     return qm.getState();
   }
   async function handleRetryOrSkip(action) {
@@ -357,11 +462,15 @@
     }
     return qm.getState();
   }
+  async function handleDetectSalesOfficer() {
+    const { salesOfficer, tabUrl, error } = await lookupSalesOfficer();
+    return { salesOfficer, tabUrl, error };
+  }
   async function handlePopupMessage(message) {
     const qm = await getQueueManager();
     switch (message.type) {
       case "START":
-        return handleStart(message.total, message.mode, message.ptclUsername);
+        return handleStart(message.total, message.mode);
       case "PAUSE":
         return qm.pause();
       case "RESUME":
@@ -395,6 +504,9 @@
         case "SUBMISSION_FAILED":
           void handleSubmissionFailed(message);
           return false;
+        case "DETECT_SALES_OFFICER":
+          handleDetectSalesOfficer().then(sendResponse);
+          return true;
         default:
           handlePopupMessage(message).then(sendResponse);
           return true;
