@@ -17,6 +17,8 @@ export interface FieldMapping {
   latDisplay: string;
   lngDisplay: string;
   email: string;
+  /** Disabled text box the page prefills with the logged-in user's PTCL username (e.g. SDSMTR.MDTAYAI). Read-only for us. */
+  salesOfficer: string;
   /** Radio button whose click triggers a real page postback (reload). */
   orderStatusRadio: string;
   /** Radio button whose click also triggers a real page postback (reload). */
@@ -36,6 +38,7 @@ export const defaultFieldMapping: FieldMapping = {
   latDisplay: '#TxtLatitude',
   lngDisplay: '#TxtLongitude',
   email: '#TxtEmail',
+  salesOfficer: '#txtSalesofficer',
   orderStatusRadio: '#rbOrderBookedNo', // "Contact Later"
   technologyRadio: '#rbODNNo', // "FF"
   submit: '#btnLogin',

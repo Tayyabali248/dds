@@ -1,5 +1,10 @@
 import { api } from '../platform/browser';
-import type { PopupToBackgroundMessage, QueueState } from '../types/messages';
+import type {
+  GetSalesOfficerMessage,
+  PopupToBackgroundMessage,
+  QueueState,
+  SalesOfficerResponse,
+} from '../types/messages';
 
 function el<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -8,6 +13,8 @@ function el<T extends HTMLElement>(id: string): T {
 }
 
 const ptclUsernameInput = el<HTMLInputElement>('ptcl-username-input');
+const detectUsernameBtn = el<HTMLButtonElement>('detect-username-btn');
+const usernameHint = el<HTMLParagraphElement>('username-hint');
 const entriesInput = el<HTMLInputElement>('entries-input');
 const modeAuto = el<HTMLInputElement>('mode-auto');
 const modeManual = el<HTMLInputElement>('mode-manual');
@@ -35,6 +42,59 @@ async function send(message: PopupToBackgroundMessage): Promise<QueueState> {
 }
 
 let lastRenderedUsername = '';
+// Set once the username came from somewhere the 1s poll must not overwrite:
+// the page's Sales Officer field, or the user's own typing.
+let usernamePinned = false;
+
+const POMS_FORM_URL = 'https://my.ptcl.net.pk/POMS/DDSNewCustomer.aspx*';
+
+/**
+ * Asks the content script for the value of the page's own (disabled) Sales
+ * Officer box - POMS puts the logged-in user's PTCL username there, so
+ * there's no reason to make anyone type it. Tries the active tab first, then
+ * any other open DDS form tab. Returns null when no such tab is open, the
+ * content script isn't attached yet, or the box is empty.
+ */
+async function readSalesOfficerFromPage(): Promise<string | null> {
+  const message: GetSalesOfficerMessage = { type: 'GET_SALES_OFFICER' };
+  const tabIds: number[] = [];
+
+  const [activeTab] = await api.tabs.query({ active: true, currentWindow: true });
+  if (activeTab?.id !== undefined) tabIds.push(activeTab.id);
+  for (const tab of await api.tabs.query({ url: POMS_FORM_URL })) {
+    if (tab.id !== undefined && !tabIds.includes(tab.id)) tabIds.push(tab.id);
+  }
+
+  for (const tabId of tabIds) {
+    try {
+      const reply = await api.tabs.sendMessage<SalesOfficerResponse>(tabId, message);
+      if (reply?.salesOfficer) return reply.salesOfficer;
+    } catch {
+      // No content script on that tab (not the DDS form) - try the next one.
+    }
+  }
+  return null;
+}
+
+/** `manual` = the user clicked the button, so say something either way. */
+async function prefillUsernameFromPage(manual: boolean): Promise<void> {
+  if (!manual && ptclUsernameInput.value.trim()) return;
+
+  const officer = await readSalesOfficerFromPage();
+  if (!officer) {
+    if (manual) {
+      usernameHint.textContent =
+        'Sales Officer field not readable - open the DDS New Customer page in a tab, or type the username.';
+    }
+    return;
+  }
+  // The user may have started typing while we were asking the page.
+  if (!manual && ptclUsernameInput.value.trim()) return;
+
+  ptclUsernameInput.value = officer;
+  usernamePinned = true;
+  usernameHint.textContent = 'Read from the page\'s Sales Officer field.';
+}
 
 function render(state: QueueState): void {
   const isIdle = state.runState === 'idle';
@@ -45,8 +105,9 @@ function render(state: QueueState): void {
 
   // Only overwrite what the user's typing if we haven't already reflected
   // this run's username (avoids clobbering input while they're editing it
-  // before Start has been pressed).
-  if (state.ptclUsername && state.ptclUsername !== lastRenderedUsername) {
+  // before Start has been pressed), and never once it's pinned - a value the
+  // user typed or that we read off the page beats a stale saved one.
+  if (!usernamePinned && state.ptclUsername && state.ptclUsername !== lastRenderedUsername) {
     ptclUsernameInput.value = state.ptclUsername;
     lastRenderedUsername = state.ptclUsername;
   }
@@ -56,6 +117,7 @@ function render(state: QueueState): void {
   const canEditSetup = isIdle || isFinished;
   setupSection.style.opacity = canEditSetup ? '1' : '0.5';
   ptclUsernameInput.disabled = !canEditSetup;
+  detectUsernameBtn.disabled = !canEditSetup;
   entriesInput.disabled = !canEditSetup;
   modeAuto.disabled = !canEditSetup;
   modeManual.disabled = !canEditSetup;
@@ -94,6 +156,14 @@ async function refresh(): Promise<void> {
   const state = await send({ type: 'GET_STATUS' });
   render(state);
 }
+
+ptclUsernameInput.addEventListener('input', () => {
+  usernamePinned = true;
+});
+
+detectUsernameBtn.addEventListener('click', () => {
+  void prefillUsernameFromPage(true);
+});
 
 startBtn.addEventListener('click', async () => {
   const ptclUsername = ptclUsernameInput.value.trim();
@@ -135,4 +205,6 @@ skipBtn.addEventListener('click', async () => {
 const pollTimer = setInterval(refresh, 1000);
 window.addEventListener('unload', () => clearInterval(pollTimer));
 
-void refresh();
+// First paint from saved state, then - if that left the username blank (very
+// first use) - read it off the DDS page so nobody has to type it.
+void refresh().then(() => prefillUsernameFromPage(false));

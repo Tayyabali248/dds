@@ -102,6 +102,7 @@
     latDisplay: "#TxtLatitude",
     lngDisplay: "#TxtLongitude",
     email: "#TxtEmail",
+    salesOfficer: "#txtSalesofficer",
     orderStatusRadio: "#rbOrderBookedNo",
     // "Contact Later"
     technologyRadio: "#rbODNNo",
@@ -213,6 +214,11 @@
   function isTechnologyChecked(mapping2) {
     return document.querySelector(mapping2.technologyRadio)?.checked ?? false;
   }
+  function readSalesOfficer(mapping2) {
+    const el = document.querySelector(mapping2.salesOfficer);
+    const value = el?.value.trim() ?? "";
+    return value.length > 0 ? value : null;
+  }
   function clickElement(selector) {
     const el = document.querySelector(selector);
     if (!el) return false;
@@ -286,9 +292,13 @@
     const message = { type: "CONTENT_READY", url: window.location.href };
     send(message);
   }
-  api.runtime.onMessage.addListener((message) => {
+  api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === "FILL_ENTRY") {
       handleFillEntry(message);
+    }
+    if (message.type === "GET_SALES_OFFICER") {
+      const response = { salesOfficer: readSalesOfficer(mapping) };
+      sendResponse(response);
     }
     return false;
   });

@@ -153,6 +153,19 @@ export function isTechnologyChecked(mapping: FieldMapping): boolean {
   return document.querySelector<HTMLInputElement>(mapping.technologyRadio)?.checked ?? false;
 }
 
+/**
+ * Reads the PTCL username out of the page's own disabled "Sales Officer"
+ * box, which POMS fills with whoever is logged in. Read-only - we never
+ * write to this field. Returns null when the box is absent or empty (page
+ * still loading, or a different POMS screen), so the caller can fall back
+ * to asking the user to type it.
+ */
+export function readSalesOfficer(mapping: FieldMapping): string | null {
+  const el = document.querySelector<HTMLInputElement>(mapping.salesOfficer);
+  const value = el?.value.trim() ?? '';
+  return value.length > 0 ? value : null;
+}
+
 /** Returns false if the element wasn't found (caller reports that as a failure). */
 export function clickElement(selector: string): boolean {
   const el = document.querySelector<HTMLElement>(selector);

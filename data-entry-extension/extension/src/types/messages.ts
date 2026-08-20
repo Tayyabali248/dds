@@ -128,8 +128,24 @@ export interface FillEntryMessage {
 export interface NoActiveQueueMessage {
   type: 'NO_ACTIVE_QUEUE';
 }
+/**
+ * Sent by the popup straight to the content script (not via the background)
+ * to read the logged-in PTCL username off the page's own Sales Officer box,
+ * so the user never has to type it. Answered with SalesOfficerResponse.
+ */
+export interface GetSalesOfficerMessage {
+  type: 'GET_SALES_OFFICER';
+}
 
-export type BackgroundToContentMessage = FillEntryMessage | NoActiveQueueMessage;
+export type BackgroundToContentMessage =
+  | FillEntryMessage
+  | NoActiveQueueMessage
+  | GetSalesOfficerMessage;
+
+/** null when the field isn't on the page (wrong screen) or is still empty. */
+export interface SalesOfficerResponse {
+  salesOfficer: string | null;
+}
 
 // Background's reply to every PopupToBackgroundMessage is the fresh QueueState.
 export type BackgroundToPopupMessage = QueueState;

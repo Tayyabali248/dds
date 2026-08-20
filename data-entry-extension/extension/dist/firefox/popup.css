@@ -10,6 +10,17 @@ body {
 h1 { font-size: 16px; margin: 0 0 12px; }
 label { display: block; font-weight: 600; margin-bottom: 4px; }
 .muted { color: #6b7280; font-weight: normal; font-size: 11px; margin: -6px 0 10px; }
+button.link-btn {
+  background: none;
+  color: #1f6feb;
+  border: none;
+  padding: 0;
+  margin: -6px 0 6px;
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+button.link-btn:disabled { background: none; color: #9aa0a6; cursor: not-allowed; text-decoration: none; }
 input[type='number'],
 input[type='text'] {
   width: 100%;

@@ -96,6 +96,8 @@
     return found;
   }
   var ptclUsernameInput = el("ptcl-username-input");
+  var detectUsernameBtn = el("detect-username-btn");
+  var usernameHint = el("username-hint");
   var entriesInput = el("entries-input");
   var modeAuto = el("mode-auto");
   var modeManual = el("mode-manual");
@@ -118,19 +120,53 @@
     return api.runtime.sendMessage(message);
   }
   var lastRenderedUsername = "";
+  var usernamePinned = false;
+  var POMS_FORM_URL = "https://my.ptcl.net.pk/POMS/DDSNewCustomer.aspx*";
+  async function readSalesOfficerFromPage() {
+    const message = { type: "GET_SALES_OFFICER" };
+    const tabIds = [];
+    const [activeTab] = await api.tabs.query({ active: true, currentWindow: true });
+    if (activeTab?.id !== void 0) tabIds.push(activeTab.id);
+    for (const tab of await api.tabs.query({ url: POMS_FORM_URL })) {
+      if (tab.id !== void 0 && !tabIds.includes(tab.id)) tabIds.push(tab.id);
+    }
+    for (const tabId of tabIds) {
+      try {
+        const reply = await api.tabs.sendMessage(tabId, message);
+        if (reply?.salesOfficer) return reply.salesOfficer;
+      } catch {
+      }
+    }
+    return null;
+  }
+  async function prefillUsernameFromPage(manual) {
+    if (!manual && ptclUsernameInput.value.trim()) return;
+    const officer = await readSalesOfficerFromPage();
+    if (!officer) {
+      if (manual) {
+        usernameHint.textContent = "Sales Officer field not readable - open the DDS New Customer page in a tab, or type the username.";
+      }
+      return;
+    }
+    if (!manual && ptclUsernameInput.value.trim()) return;
+    ptclUsernameInput.value = officer;
+    usernamePinned = true;
+    usernameHint.textContent = "Read from the page's Sales Officer field.";
+  }
   function render(state) {
     const isIdle = state.runState === "idle";
     const isRunning = state.runState === "running";
     const isPaused = state.runState === "paused";
     const isFinished = state.runState === "completed" || state.runState === "stopped";
     const hasFailure = state.entryStatus === "failed";
-    if (state.ptclUsername && state.ptclUsername !== lastRenderedUsername) {
+    if (!usernamePinned && state.ptclUsername && state.ptclUsername !== lastRenderedUsername) {
       ptclUsernameInput.value = state.ptclUsername;
       lastRenderedUsername = state.ptclUsername;
     }
     const canEditSetup = isIdle || isFinished;
     setupSection.style.opacity = canEditSetup ? "1" : "0.5";
     ptclUsernameInput.disabled = !canEditSetup;
+    detectUsernameBtn.disabled = !canEditSetup;
     entriesInput.disabled = !canEditSetup;
     modeAuto.disabled = !canEditSetup;
     modeManual.disabled = !canEditSetup;
@@ -160,6 +196,12 @@
     const state = await send({ type: "GET_STATUS" });
     render(state);
   }
+  ptclUsernameInput.addEventListener("input", () => {
+    usernamePinned = true;
+  });
+  detectUsernameBtn.addEventListener("click", () => {
+    void prefillUsernameFromPage(true);
+  });
   startBtn.addEventListener("click", async () => {
     const ptclUsername = ptclUsernameInput.value.trim();
     if (!ptclUsername) {
@@ -190,6 +232,6 @@
   });
   var pollTimer = setInterval(refresh, 1e3);
   window.addEventListener("unload", () => clearInterval(pollTimer));
-  void refresh();
+  void refresh().then(() => prefillUsernameFromPage(false));
 })();
 //# sourceMappingURL=popup.js.map
